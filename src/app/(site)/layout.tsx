@@ -8,7 +8,7 @@ import { Footer } from "@/components/site/Footer";
 import { Nav } from "@/components/site/Nav";
 import { getSettings } from "@/lib/content";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function SiteLayout({ children }: { children: ReactNode }) {
   const settings = await getSettings();

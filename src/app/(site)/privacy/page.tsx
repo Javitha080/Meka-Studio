@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalPage } from "@/components/site/LegalPage";
 import { getSettings } from "@/lib/content";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Privacy policy", alternates: { canonical: "/privacy" } };
 
 export default async function PrivacyPage() {

@@ -9,7 +9,7 @@ import { Testimonials } from "@/components/site/Testimonials";
 import { Work } from "@/components/site/Work";
 import { getFaqs, getProjects, getServices, getSettings, getTestimonials } from "@/lib/content";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const s = await getSettings();
