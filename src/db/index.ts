@@ -26,14 +26,19 @@ type WaitUntilContext = { ctx?: { waitUntil: (promise: Promise<unknown>) => void
 
 function createClient() {
   const url = resolveUrl();
+  const parsed = new URL(url);
   const isLocal = /@(127\.0\.0\.1|localhost|\[::1\])/.test(url);
+  // Hyperdrive's local socket is plain (its URL says sslmode=disable) — TLS
+  // already terminates on Cloudflare's side. Supabase direct URLs need TLS.
+  const noTls =
+    isLocal ||
+    parsed.hostname.endsWith(".workers.alt") ||
+    parsed.searchParams.get("sslmode") === "disable";
   const client = postgres(url, {
     // Supavisor transaction pooler and Hyperdrive both pool connections —
     // named prepared statements cannot be matched across them.
     prepare: false,
-    // Supabase requires TLS on direct connections; Hyperdrive already handles
-    // TLS on Cloudflare's side, so its local connection stays plain.
-    ssl: isLocal ? false : "require",
+    ssl: noTls ? false : "require",
     max: Number(process.env.DATABASE_POOL_MAX ?? 2),
     idle_timeout: 10,
     connect_timeout: 8,
