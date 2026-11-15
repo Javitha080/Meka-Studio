@@ -33,8 +33,9 @@ The app runs on Cloudflare Workers through [`@opennextjs/cloudflare`](https://op
 
 - `wrangler.jsonc` + `open-next.config.ts` are pre-configured (worker name `meka-studio`, `nodejs_compat`).
 - Postgres driver: **postgres.js v3** — a plain `import "postgres"` auto-resolves to its Cloudflare socket build (the `workerd` export condition is set by OpenNext), so the same code runs on Node (build/prerender) and Workers (runtime).
-- `src/db/index.ts` creates one client per request with `prepare: false` — required by the Supavisor **transaction pooler**, which cannot guarantee named prepared statements across pooled connections.
-- Runtime: `DATABASE_URL` should be the Supabase **transaction pooler** URI (port 6543, IPv4-safe).
+- `src/db/index.ts` creates one client per query chain with `prepare: false` — required by Supavisor, which cannot guarantee named prepared statements across pooled connections.
+- Runtime: Postgres is reached through the **Hyperdrive** binding (`meka-supabase-2`), whose origin is the Supabase **session pooler** (port 5432). Session mode keeps one stable server connection per pool slot — the transaction pooler (6543) starves Hyperdrive's origin pool and causes "open slot" timeouts. TLS to Supabase terminates inside Hyperdrive; the Worker connects to its local socket with `sslmode=disable`.
+- Local dev / Node builds: `DATABASE_URL` (transaction pooler, port 6543, IPv4-safe, TLS required).
 - **CI/CD**: every push to `main` runs `.github/workflows/deploy.yml` (install → OpenNext build → `wrangler deploy`). Required repo secrets: `CLOUDFLARE_API_TOKEN`, plus build-time `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 - Manual deploy: `npm run deploy` (needs `CLOUDFLARE_API_TOKEN` env var, or `wrangler login`).
 - Server-only secrets go to the Worker, not the bundle: `npx wrangler secret put DATABASE_URL` (same for `SUPABASE_SERVICE_ROLE_KEY`, `SETUP_TOKEN`, `MAILGUN_*`).
@@ -46,6 +47,6 @@ Migrate the e-mail env vars you configured in Netlify (`MAILGUN_*`) into this ap
 `npm run dev` · `npm run build` · `npx vitest run` · `npx drizzle-kit push`
 
 ## Notes
-- Public pages are ISR (60 s) and revalidated instantly on every CMS save. If the database is unreachable they fall back to bundled starter content.
+- Public pages render dynamically per request (no ISR). If the database is unreachable they fall back to bundled starter content. CMS edits go live immediately.
 - Keep hero / preview loops short (3–8 s, < 6 MB). Upload long films to YouTube/Vimeo and paste the link in *Full film*.
 - Supabase's global upload limit is 50 MB on the free plan; raise `MAX_UPLOAD_MB` after upgrading.
