@@ -1,7 +1,6 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { cache } from "react";
 import * as schema from "./schema";
 
 /**
@@ -11,43 +10,66 @@ import * as schema from "./schema";
  * Outside a Worker context (next build prerender) getCloudflareContext throws
  * and we fall back to DATABASE_URL — the Supabase transaction pooler with TLS.
  */
-function resolveUrl(): { url: string; viaHyperdrive: boolean } {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is required");
+function resolveUrl(): string {
+  const fallback = process.env.DATABASE_URL;
+  if (!fallback) throw new Error("DATABASE_URL is required");
   try {
     const env = getCloudflareContext().env as { HYPERDRIVE?: { connectionString?: string } };
-    if (env.HYPERDRIVE?.connectionString) return { url: env.HYPERDRIVE.connectionString, viaHyperdrive: true };
+    if (env.HYPERDRIVE?.connectionString) return env.HYPERDRIVE.connectionString;
   } catch {
     // Not running inside a Cloudflare Worker (build/prerender on Node).
   }
-  return { url, viaHyperdrive: false };
+  return fallback;
 }
 
+type WaitUntilContext = { ctx?: { waitUntil: (promise: Promise<unknown>) => void } };
+
 function createClient() {
-  const { url, viaHyperdrive } = resolveUrl();
+  const url = resolveUrl();
   const isLocal = /@(127\.0\.0\.1|localhost|\[::1\])/.test(url);
-  return postgres(url, {
+  const client = postgres(url, {
     // Supavisor transaction pooler and Hyperdrive both pool connections —
     // named prepared statements cannot be matched across them.
     prepare: false,
     // Supabase requires TLS on direct connections; Hyperdrive already handles
     // TLS on Cloudflare's side, so its local connection stays plain.
-    ssl: viaHyperdrive || isLocal ? false : "require",
-    max: Number(process.env.DATABASE_POOL_MAX ?? 3),
+    ssl: isLocal ? false : "require",
+    max: Number(process.env.DATABASE_POOL_MAX ?? 2),
     idle_timeout: 10,
     connect_timeout: 8,
   });
+
+  /**
+   * Sockets and timers created in a Worker request context die with it. Close
+   * the client in the same context (waitUntil runs after the response but
+   * inside this request), so postgres.js's idle/retry timers can never fire
+   * after the request has ended — those settlements get dropped under the
+   * strict cross-request promise semantics and wedge later requests.
+   */
+  try {
+    const { ctx } = getCloudflareContext() as WaitUntilContext;
+    ctx?.waitUntil(client.end({ timeout: 2 }).catch(() => {}));
+  } catch {
+    // No Worker context (Node dev/build) — idle_timeout cleans up instead.
+  }
+
+  return client;
 }
 
 /**
- * One client per server request. React `cache` memoizes the client for a single
- * request scope (page render, server action or route handler).
+ * One client per query chain. Deliberately NOT memoized with React `cache()`:
+ * under OpenNext on workerd a cache()-scoped client can be reached by a later
+ * request, making it await promises bound to a request that already ended —
+ * those can never settle and the render hangs forever.
  */
-export const getDb = cache((): PostgresJsDatabase<typeof schema> => drizzle(createClient(), { schema }));
+export function getDb(): PostgresJsDatabase<typeof schema> {
+  return drizzle(createClient(), { schema });
+}
 
 /**
- * Request-scoped drizzle client. Every property access resolves to the current
- * request's client, so `import { db } from "@/db"` keeps working everywhere.
+ * Request-scoped drizzle client. Every property access resolves to a fresh
+ * client for the current chain, so `import { db } from "@/db"` keeps working
+ * everywhere.
  */
 export const db: PostgresJsDatabase<typeof schema> = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_target, prop) {
