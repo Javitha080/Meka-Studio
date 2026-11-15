@@ -21,7 +21,7 @@
   // TLS to Supabase terminates on Cloudflare's side; the Worker gets a plain
   // local connection string via env.HYPERDRIVE.connectionString.
   "hyperdrive": [
-    { "binding": "HYPERDRIVE", "id": "89483769d1204c26b2d49a3539c1ac11" }
+    { "binding": "HYPERDRIVE", "id": "5f69d54ba75d4b5694cf669b68481022" }
   ],
   // R2 incremental cache (ISR across isolates) can be enabled later:
   // "r2_buckets": [

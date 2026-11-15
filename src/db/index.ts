@@ -36,7 +36,10 @@ function createClient() {
     // named prepared statements cannot be matched across them.
     prepare: false,
     ssl: noTls ? false : "require",
-    max: Number(process.env.DATABASE_POOL_MAX ?? 2),
+    // One connection per client. Every query chain gets its own client (see
+    // getDb below), so concurrent renders multiply this — keep it minimal to
+    // stay well inside Hyperdrive's origin pool budget.
+    max: 1,
     idle_timeout: 10,
     connect_timeout: 8,
   });
