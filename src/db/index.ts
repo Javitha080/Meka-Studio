@@ -2,7 +2,6 @@ import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import * as schema from "./schema";
-
 /**
  * Resolve the database URL. At runtime on Cloudflare Workers the Hyperdrive
  * binding terminates TLS to Supabase and exposes a plain local connection
@@ -21,8 +20,6 @@ function resolveUrl(): string {
   }
   return fallback;
 }
-
-type WaitUntilContext = { ctx?: { waitUntil: (promise: Promise<unknown>) => void } };
 
 function createClient() {
   const url = resolveUrl();
@@ -45,18 +42,12 @@ function createClient() {
   });
 
   /**
-   * Sockets and timers created in a Worker request context die with it. Close
-   * the client in the same context (waitUntil runs after the response but
-   * inside this request), so postgres.js's idle/retry timers can never fire
-   * after the request has ended — those settlements get dropped under the
-   * strict cross-request promise semantics and wedge later requests.
+   * No explicit cleanup: sockets are bound to this request context and die
+   * with it, and the worker runs with lenient cross-request promise
+   * settlement (no_handle_cross_request_promise_resolution), so the client's
+   * idle-timeout timer firing after the request is harmless. An eager
+   * client.end() here would poison the client before its first query.
    */
-  try {
-    const { ctx } = getCloudflareContext() as WaitUntilContext;
-    ctx?.waitUntil(client.end({ timeout: 2 }).catch(() => {}));
-  } catch {
-    // No Worker context (Node dev/build) — idle_timeout cleans up instead.
-  }
 
   return client;
 }
