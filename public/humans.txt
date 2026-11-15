@@ -1,0 +1,5 @@
+/* TEAM */
+Studio: Meka Studio — Videography & Photography
+
+/* SITE */
+Stack: Next.js, Supabase, Drizzle, GSAP, Lenis, Tailwind CSS, Mailgun
